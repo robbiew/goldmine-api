@@ -25,17 +25,17 @@ This project provides an HTTP API to generate and serve statistics from Synchron
 
    ```bash
    git clone https://github.com/robbiew/goldmine-api.git
-   cd synchronet-log-stats-api```
+   cd synchronet-log-stats-api
 
 2.	Build the project:
     ```bash
-    go build -o goldmine-api main.go```
+    go build -o goldmine-api main.go
 
 ### Usage
 
 1. Run the server:
    ```bash
-   sudo ./goldmine-api --logdir=/path/to/your/log/dir```
+   sudo ./goldmine-api --logdir=/path/to/your/log/dir
 
 Note, for Linux, Synchronet writes logs to /var/log/syslog*. This server listens on port 8080.
 
@@ -57,7 +57,8 @@ Response:
 * 200 OK: A JSON object containing the top 10 most launched games.
 * 400 Bad Request: If the period parameter is missing or invalid.
 
-```{
+```
+{
   "period": "all",
   "games": [
     {
