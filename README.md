@@ -37,7 +37,7 @@ This project provides an HTTP API to generate and serve statistics from Synchron
    ```bash
    sudo ./goldmine-api --logdir=/path/to/your/log/dir```
 
-Note, for Linux Synchronet defaults logs to /var/log/syslog*. By default, the server listens on port 8080.
+Note, for Linux, Synchronet writes logs to /var/log/syslog*. This server listens on port 8080.
 
 2. Access the API endpoints:
 * Top 10 Games: http://localhost:8080/top10?period=all
