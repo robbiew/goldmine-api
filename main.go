@@ -167,7 +167,7 @@ func processLogFile(file string, stats *Stats) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading log file %s: %v\n", file)
+		fmt.Printf("Error reading log file %s: %v\n", file, err)
 	}
 }
 
@@ -196,7 +196,7 @@ func processGzipLogFile(file string, stats *Stats) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading log file %s: %v\n", file)
+		fmt.Printf("Error reading log file %s: %v\n", file, err)
 	}
 }
 
