@@ -47,7 +47,7 @@ Note, for Linux, Synchronet writes logs to /var/log/syslog*. This server listens
  
 ### API Endpoints
 
-GET /top10
+#### GET /top10
 * Retrieve the top 10 most launched games.
   
 Query Parameters:
@@ -69,7 +69,7 @@ Response:
   ]
 }
 ```
-GET /stats
+#### GET /stats
 * Retrieve detailed statistics.
   
 Query Parameters:
