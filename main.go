@@ -18,6 +18,8 @@ import (
 
 type GameStats struct {
 	GameName    string `json:"game_name"`
+	DoorCode    string `json:"door_code"`
+	Category    string `json:"category"`
 	LaunchCount int    `json:"launch_count"`
 }
 
@@ -36,11 +38,19 @@ type Top10Stats struct {
 	Games  []GameStats `json:"games"`
 }
 
+type LibraryGame struct {
+	GameName string `json:"game_name"`
+	Category string `json:"category"`
+	DoorCode string `json:"door_code"`
+}
+
 var (
 	logDir     string
 	logPattern = regexp.MustCompile(`synchronet: term Node \d+ <\S+> running external program: (.+)`)
 	stats      *Stats
 	statsMutex sync.RWMutex
+	xtrnConfig = "/sbbs/ctrl/xtrn.ini"
+	library    []LibraryGame
 )
 
 func main() {
@@ -49,17 +59,20 @@ func main() {
 
 	// Load initial data
 	refreshData()
+	loadLibrary()
 
 	// Start background goroutine to refresh data every 24 hours
 	go func() {
 		for {
 			time.Sleep(24 * time.Hour)
 			refreshData()
+			loadLibrary()
 		}
 	}()
 
 	http.HandleFunc("/top10", handleTop10)
 	http.HandleFunc("/stats", handleStats)
+	http.HandleFunc("/library", handleLibrary)
 
 	fmt.Println("Starting server on :8080")
 	http.ListenAndServe(":8080", nil)
@@ -141,6 +154,21 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+func handleLibrary(w http.ResponseWriter, r *http.Request) {
+	statsMutex.RLock()
+	defer statsMutex.RUnlock()
+
+	filteredLibrary := []LibraryGame{}
+	for _, game := range library {
+		if game.Category != "ZZZ_SysOp" {
+			filteredLibrary = append(filteredLibrary, game)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(filteredLibrary)
+}
+
 func loadStats() *Stats {
 	return &Stats{
 		Month: make(map[string][]GameStats),
@@ -201,6 +229,10 @@ func processGzipLogFile(file string, stats *Stats) {
 }
 
 func processLogEntry(line, gameName string, stats *Stats) {
+	if gameName == "Bullseye Bulletins" {
+		return
+	}
+
 	timeLayout := "2006-01-02T15:04:05.999999-07:00"
 	timePart := strings.Split(line, " ")[0]
 	t, err := time.Parse(timeLayout, timePart)
@@ -212,16 +244,23 @@ func processLogEntry(line, gameName string, stats *Stats) {
 	month := strings.ToLower(t.Format("January"))
 	year := t.Format("2006")
 
-	updateStats(stats, year, month, gameName)
+	doorCode, category := getGameDetails(gameName)
+
+	// Exclude games in the "ZZZ_SysOp" category
+	if category == "ZZZ_SysOp" {
+		return
+	}
+
+	updateStats(stats, year, month, gameName, doorCode, category)
 }
 
-func updateStats(stats *Stats, year, month, gameName string) {
-	updateStatsMap(stats.Month, month, gameName)
-	updateStatsMap(stats.Year, year, gameName)
-	updateNestedStats(stats.All, year, month, gameName)
+func updateStats(stats *Stats, year, month, gameName, doorCode, category string) {
+	updateStatsMap(stats.Month, month, gameName, doorCode, category)
+	updateStatsMap(stats.Year, year, gameName, doorCode, category)
+	updateNestedStats(stats.All, year, month, gameName, doorCode, category)
 }
 
-func updateStatsMap(stats map[string][]GameStats, key, gameName string) {
+func updateStatsMap(stats map[string][]GameStats, key, gameName, doorCode, category string) {
 	if _, exists := stats[key]; !exists {
 		stats[key] = []GameStats{}
 	}
@@ -233,10 +272,15 @@ func updateStatsMap(stats map[string][]GameStats, key, gameName string) {
 		}
 	}
 
-	stats[key] = append(stats[key], GameStats{GameName: gameName, LaunchCount: 1})
+	stats[key] = append(stats[key], GameStats{
+		GameName:    gameName,
+		DoorCode:    doorCode,
+		Category:    category,
+		LaunchCount: 1,
+	})
 }
 
-func updateNestedStats(stats YearStats, year, month, gameName string) {
+func updateNestedStats(stats YearStats, year, month, gameName, doorCode, category string) {
 	if _, exists := stats[year]; !exists {
 		stats[year] = make(MonthStats)
 	}
@@ -252,7 +296,12 @@ func updateNestedStats(stats YearStats, year, month, gameName string) {
 		}
 	}
 
-	stats[year][month] = append(stats[year][month], GameStats{GameName: gameName, LaunchCount: 1})
+	stats[year][month] = append(stats[year][month], GameStats{
+		GameName:    gameName,
+		DoorCode:    doorCode,
+		Category:    category,
+		LaunchCount: 1,
+	})
 }
 
 func getTop10Stats(stats *Stats, period string) Top10Stats {
@@ -275,17 +324,24 @@ func getTop10Stats(stats *Stats, period string) Top10Stats {
 		}
 	}
 
-	sort.Slice(top10, func(i, j int) bool {
-		return top10[i].LaunchCount > top10[j].LaunchCount
+	filteredTop10 := []GameStats{}
+	for _, game := range top10 {
+		if game.GameName != "Bullseye Bulletins" {
+			filteredTop10 = append(filteredTop10, game)
+		}
+	}
+
+	sort.Slice(filteredTop10, func(i, j int) bool {
+		return filteredTop10[i].LaunchCount > filteredTop10[j].LaunchCount
 	})
 
-	if len(top10) > 10 {
-		top10 = top10[:10]
+	if len(filteredTop10) > 10 {
+		filteredTop10 = filteredTop10[:10]
 	}
 
 	return Top10Stats{
 		Period: period,
-		Games:  top10,
+		Games:  filteredTop10,
 	}
 }
 
@@ -300,4 +356,120 @@ func isMonth(period string) bool {
 func isYear(period string) bool {
 	_, err := time.Parse("2006", period)
 	return err == nil
+}
+
+func getGameDetails(gameName string) (string, string) {
+	file, err := os.Open(xtrnConfig)
+	if err != nil {
+		fmt.Printf("Error opening xtrn.ini file: %v\n", err)
+		return "", ""
+	}
+	defer file.Close()
+
+	var doorCode, category string
+	scanner := bufio.NewScanner(file)
+	var currentCategory string
+	var categoryMap = make(map[string]string)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "[sec:") {
+			currentCategory = strings.TrimPrefix(line, "[sec:")
+			currentCategory = strings.TrimSuffix(currentCategory, "]")
+			continue
+		}
+
+		if strings.HasPrefix(line, "name=") {
+			categoryMap[currentCategory] = strings.TrimPrefix(line, "name=")
+			continue
+		}
+
+		if strings.HasPrefix(line, "[prog:") {
+			progParts := strings.Split(line, ":")
+			if len(progParts) == 3 && strings.Contains(progParts[2], "]") {
+				code := strings.TrimSuffix(progParts[2], "]")
+				for scanner.Scan() {
+					innerLine := scanner.Text()
+					if strings.HasPrefix(innerLine, "name=") {
+						name := strings.TrimPrefix(innerLine, "name=")
+						if name == gameName {
+							doorCode = code
+							category = categoryMap[progParts[1]]
+							if category == "ZZZ_SysOp" {
+								return "", ""
+							}
+							return doorCode, category
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading xtrn.ini file: %v\n", err)
+	}
+	return doorCode, category
+}
+
+func loadLibrary() {
+	file, err := os.Open(xtrnConfig)
+	if err != nil {
+		fmt.Printf("Error opening xtrn.ini file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	var currentCategory string
+	var categoryMap = make(map[string]string)
+	var tempLibrary []LibraryGame
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "[sec:") {
+			currentCategory = strings.TrimPrefix(line, "[sec:")
+			currentCategory = strings.TrimSuffix(currentCategory, "]")
+			continue
+		}
+
+		if strings.HasPrefix(line, "name=") {
+			categoryMap[currentCategory] = strings.TrimPrefix(line, "name=")
+			continue
+		}
+
+		if strings.HasPrefix(line, "[prog:") {
+			progParts := strings.Split(line, ":")
+			if len(progParts) == 3 && strings.Contains(progParts[2], "]") {
+				code := strings.TrimSuffix(progParts[2], "]")
+				for scanner.Scan() {
+					innerLine := scanner.Text()
+					if strings.HasPrefix(innerLine, "name=") {
+						name := strings.TrimPrefix(innerLine, "name=")
+						if currentCategory == "ZZZ_SysOp" {
+							continue
+						}
+						tempLibrary = append(tempLibrary, LibraryGame{
+							GameName: name,
+							DoorCode: code,
+							Category: categoryMap[progParts[1]],
+						})
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading xtrn.ini file: %v\n", err)
+	}
+
+	statsMutex.Lock()
+	library = tempLibrary
+	statsMutex.Unlock()
 }
