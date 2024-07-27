@@ -10,6 +10,7 @@ This project provides an HTTP API to generate and serve statistics from Synchron
   - Monthly statistics.
   - Yearly statistics.
   - All-time statistics.
+  - Provides a library endpoint to list all games with details.
 - Automatically reloads and refreshes data every 24 hours.
 
 ## Getting Started
@@ -44,6 +45,7 @@ Note, for Linux, Synchronet writes logs to /var/log/syslog*. This server listens
   * Replace all with month or year or a specific month (e.g., july) or year (e.g., 2024).
 * Detailed Stats: http://localhost:8080/stats?period=all
   * Replace all with month or year or a specific month (e.g., july) or year (e.g., 2024).
+* Library: http://localhost:8080/library
  
 ### API Endpoints
 
@@ -57,12 +59,14 @@ Response:
 * 200 OK: A JSON object containing the top 10 most launched games.
 * 400 Bad Request: If the period parameter is missing or invalid.
 
-```
+```bash
 {
   "period": "all",
   "games": [
     {
       "game_name": "Adventurer's Maze II",
+      "door_code": "AM2",
+      "category": "RPGs: Medieval & Fantasy",
       "launch_count": 42
     },
     ...
@@ -79,12 +83,14 @@ Response:
 * 200 OK: A JSON object containing detailed statistics.
 * 400 Bad Request: If the period parameter is missing or invalid.
 
-```
+```bash
 {
   "month": {
     "january": [
       {
         "game_name": "Adventurer's Maze II",
+        "door_code": "AM2",
+        "category": "RPGs: Medieval & Fantasy",
         "launch_count": 42
       },
       ...
@@ -93,5 +99,23 @@ Response:
   }
 }
 ```
+#### GET /library
+* Retrieve a list of all games with details.
 
+Query Parameters:
+* None
+
+Response:
+* 200 OK: A JSON object containing the list of all games.
+
+```bash
+[
+  {
+    "game_name": "Adventurer's Maze II",
+    "door_code": "AM2",
+    "category": "RPGs: Medieval & Fantasy"
+  },
+  ...
+]
+```
 
