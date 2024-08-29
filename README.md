@@ -18,7 +18,7 @@ This project provides an HTTP API to generate and serve statistics from Synchron
 ### Prerequisites
 
 - Go 1.14 or later
-- Synchronet log files in the specified directory (e.g. /var/log)
+- [Synchronet BBS](http://wiki.synchro.net/) running as Door Server, with log files in the specified directory (e.g. /var/log)
 
 ### Installation
 
