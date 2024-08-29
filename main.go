@@ -53,6 +53,20 @@ var (
 	library    []LibraryGame
 )
 
+func withCORS(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	}
+}
+
 func main() {
 	flag.StringVar(&logDir, "logdir", "/var/log", "Specify the directory containing log files")
 	flag.Parse()
@@ -61,21 +75,35 @@ func main() {
 	refreshData()
 	loadLibrary()
 
-	// Start background goroutine to refresh data every 24 hours
+	// Start background goroutine to refresh data every hour
 	go func() {
 		for {
-			time.Sleep(24 * time.Hour)
+			time.Sleep(1 * time.Hour)
 			refreshData()
 			loadLibrary()
 		}
 	}()
 
-	http.HandleFunc("/top10", handleTop10)
-	http.HandleFunc("/stats", handleStats)
-	http.HandleFunc("/library", handleLibrary)
+	// HTTP to HTTPS redirect
+	go func() {
+		err := http.ListenAndServe(":80", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+		}))
+		if err != nil {
+			fmt.Println("Failed to start HTTP redirect server:", err)
+		}
+	}()
 
-	fmt.Println("Starting server on :8080")
-	http.ListenAndServe(":8080", nil)
+	// HTTPS server using Let's Encrypt certificates
+	http.HandleFunc("/top10", withCORS(handleTop10))
+	http.HandleFunc("/stats", withCORS(handleStats))
+	http.HandleFunc("/library", withCORS(handleLibrary))
+
+	fmt.Println("Starting HTTPS server on :443")
+	err := http.ListenAndServeTLS(":443", "/etc/letsencrypt/live/goldminedoors.com/fullchain.pem", "/etc/letsencrypt/live/goldminedoors.com/privkey.pem", nil)
+	if err != nil {
+		fmt.Println("Failed to start HTTPS server:", err)
+	}
 }
 
 func refreshData() {
@@ -247,7 +275,7 @@ func processLogEntry(line, gameName string, stats *Stats) {
 	doorCode, category := getGameDetails(gameName)
 
 	// Exclude games in the "ZZZ_SysOp" category
-	if category == "ZZZ_SysOp" {
+	if category == "ZZZ_SysOp" || doorCode == "" || category == "" {
 		return
 	}
 
@@ -309,12 +337,12 @@ func getTop10Stats(stats *Stats, period string) Top10Stats {
 
 	switch {
 	case period == "month" || isMonth(period):
-		for _, gameStats := range stats.Month {
-			top10 = append(top10, gameStats...)
+		for _, gameStats := range stats.Month[period] {
+			top10 = append(top10, gameStats)
 		}
 	case period == "year" || isYear(period):
-		for _, gameStats := range stats.Year {
-			top10 = append(top10, gameStats...)
+		for _, gameStats := range stats.Year[period] {
+			top10 = append(top10, gameStats)
 		}
 	case period == "all":
 		for _, yearStats := range stats.All {
@@ -396,7 +424,7 @@ func getGameDetails(gameName string) (string, string) {
 						if name == gameName {
 							doorCode = code
 							category = categoryMap[progParts[1]]
-							if category == "ZZZ_SysOp" {
+							if category == "ZZZ_SysOp" || doorCode == "" || category == "" {
 								return "", ""
 							}
 							return doorCode, category
@@ -450,7 +478,7 @@ func loadLibrary() {
 					innerLine := scanner.Text()
 					if strings.HasPrefix(innerLine, "name=") {
 						name := strings.TrimPrefix(innerLine, "name=")
-						if currentCategory == "ZZZ_SysOp" {
+						if currentCategory == "ZZZ_SysOp" || code == "" || categoryMap[progParts[1]] == "" {
 							continue
 						}
 						tempLibrary = append(tempLibrary, LibraryGame{
